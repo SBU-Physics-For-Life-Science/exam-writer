@@ -701,7 +701,7 @@ def ExpandString(input: str, d: dict) -> str:
 #
 # See the ExpandString documentation for more details.
 def ExpandExpression(input: str) -> str:
-    parse = re.search("@(\[([0-9tT]*)\]){0,1}\{([^{}]*)\}",input)
+    parse = re.search(r"@(\[([0-9tT]*)\]){0,1}\{([^{}]*)\}",input)
     if parse == None: return input
     sigfig = parse[2]
     if sigfig != None and len(sigfig) < 1: sigfig = None
