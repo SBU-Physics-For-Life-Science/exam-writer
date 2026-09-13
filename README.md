@@ -7,7 +7,7 @@ randomized numbers in the exams.
 ## Running exam-writer.py
 
 ```
-usage: exam-writer.py [-h] [-a] [-d] [-D] [-O] [-P] [-Y] file
+usage: exam-writer.py [-h] [-a] [-d] [-D] [-O] [-P] [-Y] [-s SEED] file
 
 Write an exam based on YAML input files
 
@@ -22,7 +22,16 @@ optional arguments:
   -O, --one-version  Build a single version (for debugging exam)
   -P, --pickle       Load existing exam version from a pickle file
   -Y, --yaml         Dump a YAML representation of the parsed input
+  -s SEED, --seed SEED
+                     Random seed to use, so the exam can be regenerated
+                     identically later. Defaults to the current unix time.
 ```
+
+Every run prints the seed it used to stderr (e.g. `Using random seed: 1234
+(pass '-s 1234' to reproduce this run)`). Rerunning with `-s <seed>` picks
+the same questions, the same question/answer order, and the same random
+numbers as that earlier run — useful for regenerating an exam after a
+wording or template fix without shuffling everything again.
 
 ## The input YAML file
 

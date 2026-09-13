@@ -14,6 +14,7 @@ import json
 import pickle
 import math
 import io
+import time
 
 parser = argparse.ArgumentParser(
     description="Write an exam based on YAML input files")
@@ -37,7 +38,18 @@ parser.add_argument('-P','--pickle', dest='pickle', default=False,
 parser.add_argument('-Y','--yaml', dest='dumpYAML', default=False,
                     action='store_true',
                     help="Dump a YAML representation of the parsed input")
+parser.add_argument('-s','--seed', dest='seed', default=None, type=int,
+                    help="Random seed to use, so the exam can be regenerated "
+                    "identically later. Defaults to the current unix time.")
 options = parser.parse_args()
+
+## Seed the random module so a run can be reproduced later.  If no seed was
+# given on the command line, derive one from the current time and report it,
+# so it can be passed back in with `-s` to reproduce this exact run.
+seed = options.seed if options.seed is not None else int(time.time())
+random.seed(seed)
+print(f"Using random seed: {seed} (pass '-s {seed}' to reproduce this run)",
+      file=sys.stderr)
 
 ###################################################################
 # The Value class hierarchy: These are for holding values that will be
