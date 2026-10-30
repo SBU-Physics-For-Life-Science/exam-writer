@@ -259,10 +259,3 @@ names and the variable values, so the YAML can be corrected:
 
 Use `-O` to build a single copy while writing an exam, and `-s SEED` to
 reproduce an earlier run exactly.
-
-[comment]: # Kludge a comment block with an empty line followed by lines
-[comment]: # prefixed by '[comment]: #'
-
-[comment]: # Local Variables:
-[comment]: # mode:markdown
-[comment]: # End:
