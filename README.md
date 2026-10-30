@@ -40,7 +40,11 @@ The input file is a YAML **list**.  Each item of the list starts with
 a block of LaTeX, the roster of students, a question, and so on.  The
 items can appear in any order (except that a question is added to the
 pool when it is read).  A complete, commented example is in
-`samples/sample-test.yaml`.
+`samples/sample-test.yaml`, and the exams actually given in the
+courses are kept in the
+[exam-archive](https://github.com/SBU-Physics-For-Life-Science/exam-archive)
+repository, one YAML file per exam (for example
+`phy121/midterm2/phy121-2026-midterm2.yaml`).
 
 A minimal exam looks like this:
 
