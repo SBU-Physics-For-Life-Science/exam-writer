@@ -43,6 +43,40 @@ parser.add_argument('-s','--seed', dest='seed', default=None, type=int,
                     "identically later. Defaults to the current unix time.")
 options = parser.parse_args()
 
+## Copy everything printed to a log file named after the exam (e.g.
+## phy121-2026-midterm2.log).  The base name is only known after the
+## YAML file is read, so the output is buffered until then.
+class LogTee(object):
+    def __init__(self, stream):
+        self.stream = stream
+        self.buffer = ""
+        self.file = None
+    def open(self, filename):
+        if self.file is not None: return
+        self.file = open(filename, "w")
+        self.file.write(self.buffer)
+        self.buffer = ""
+        self.file.flush()
+    def write(self, text):
+        self.stream.write(text)
+        if self.file is None: self.buffer += text
+        else:
+            self.file.write(text)
+            self.file.flush()
+    def flush(self):
+        self.stream.flush()
+        if self.file is not None: self.file.flush()
+    def __getattr__(self, name): return getattr(self.stream, name)
+
+logTee = LogTee(sys.stdout)
+sys.stdout = logTee
+sys.stderr = logTee
+
+def OpenLog(baseName):
+    filename = baseName + ".log"
+    logTee.open(filename)
+    print("Write log to", filename)
+
 ## Seed the random module so a run can be reproduced later.  If no seed was
 # given on the command line, derive one from the current time and report it,
 # so it can be passed back in with `-s` to reproduce this exact run.
@@ -723,6 +757,14 @@ def ExpandExpression(input: str) -> str:
 #
 # If the string `sigfig` contains T or t, the number is translated
 # into a form suitable for LaTeX.
+## Values that SignificantFigures found exactly half way between two
+## printable numbers (e.g. 8.45 printed with 2 figures).  Cleared and
+## read by QuestionInstance.CheckSignificantDigits.
+roundingMidpoints = []
+
+## Number of correct answers that were rounding midpoints (warnings).
+midpointWarnings = 0
+
 def SignificantFigures(input,sigfig) -> str:
     latex = False
     general = False
@@ -740,7 +782,15 @@ def SignificantFigures(input,sigfig) -> str:
         latex = True
         sigfig = sigfig.replace("t","")
     if len(sigfig) < 1: value = str(input)
-    else: value = ("{:#." + str(int(sigfig)) + "g}").format(input)
+    else:
+        value = ("{:#." + str(int(sigfig)) + "g}").format(input)
+        if input != 0:
+            # Is the value a rounding midpoint at this many figures?
+            e = math.floor(math.log10(abs(float(input))))
+            m = abs(float(input)) / 10.0**(e - int(sigfig) + 1)
+            frac = m - math.floor(m)
+            if abs(frac - 0.5) < 1e-9 * max(1.0, m):
+                roundingMidpoints.append((input, value))
     if general: value = ("{:g}").format(float(value))
     if not latex: return value.rstrip(".")
     # Turn the value into a LaTeX number
@@ -1063,8 +1113,19 @@ class ExamInstance(object):
             while not ok and brake > 0:
                 question = QuestionInstance(self,q,item+1)
                 ok = question.ValidateQuestion()
+                question.CheckSignificantDigits()
                 brake = brake - 1
-            if brake < 1: raise RuntimeError("Can't find good answers")
+                if not ok and brake > 0:
+                    print("    -> drawing new variables for question",
+                          item+1, "(" + choice + ")",
+                          "in exam copy", self.copy,
+                          "(" + str(brake) + " attempts left)")
+            if brake < 1:
+                raise RuntimeError("Can't find good answers for question "
+                                   + str(item+1) + " (" + choice + ")"
+                                   + " in exam copy " + str(self.copy)
+                                   + " (" + self.name + ")"
+                                   + " after 10 attempts")
             self.questionList.append(question)
 
         questions = ""
@@ -1213,20 +1274,35 @@ class QuestionInstance(object):
             else:
                 aDict[txt] = [answer]
         if questionOK: return questionOK
-        # The question has duplicated answers.  Check each set of
-        # duplicate answers, and if any of the set is the correct
-        # answer mark all of the set as correct.
+        # The question has duplicated answers.  Say exactly where: which
+        # exam copy, which question (number and name), which answers
+        # (YAML name and printed letter), the duplicated text, and the
+        # variable values that produced it.
+        where = ("exam copy " + str(self.examInstance.copy)
+                 + " (" + self.examInstance.name + "), question "
+                 + str(self.number) + " (" + self.QuestionName() + ")")
+        variables = ", ".join(k + "=" + str(self.locals[k])
+                              for k in self.question.variables)
         for k in aDict:
             if len(aDict[k]) < 2: continue
+            names = ", ".join(a.AnswerName() + " [" + a.locals["ITEM"] + "]"
+                              for a in aDict[k])
+            print("DUPLICATED ANSWERS in", where)
+            print("    answers", names, "all read:", " ".join(k.split()))
+            if variables: print("    variables:", variables)
+            # If any of the duplicated answers is the correct answer,
+            # mark all of the set as correct.
             correctDuplicate = False
             for a in aDict[k]:
                 if a.locals["ITEM"] in self.correctAnswer:
                     correctDuplicate = True
             if correctDuplicate:
                 for a in aDict[k]:
-                    print("Duplicate Answer",a.AnswerName(),a.locals["ITEM"])
                     if a.locals["ITEM"] not in self.correctAnswer:
                         self.correctAnswer += a.locals["ITEM"]
+                print("    the correct answer is among them; if kept,",
+                      " and ".join(self.correctAnswer),
+                      "would all be marked correct")
         # There is a question with multiple correct answers
         # (duplicates).  Flag that by marking the correct answer as
         # lower case.  When grading any lower case answer should be
@@ -1235,6 +1311,143 @@ class QuestionInstance(object):
         if not questionOK and len(self.correctAnswer) > 1:
             self.correctAnswer = self.correctAnswer.lower()
         return questionOK
+
+    ## Stop if floating point noise would be printed on the exam.
+    #
+    # A variable built from Minimum + Step * n can come out as
+    # 8.20000000001 or 0.7999999999999999.  If such a value is printed
+    # as is (with "&{V}" instead of "@[3t]{&{V}}") it appears on the
+    # exam.  This looks at the expanded question text, every answer
+    # and the solution for a number with a long run of zeros or nines
+    # and stops the run, naming the variable to fix in the YAML file.
+    def CheckPrintedNoise(self, where):
+        noise = re.compile(r"\d+\.\d*?(?:0{6,}\d+|9{6,}\d*)")
+        parts = [("question text", str(self.question.text), self.locals),
+                 ("solution", str(self.question.soln), self.locals)]
+        for a in self.answerList:
+            parts.append(("answer " + a.AnswerName()
+                          + " [" + a.locals["ITEM"] + "]",
+                          str(a.locals["TEXT"]), a.locals))
+        for part, template, loc in parts:
+            m = noise.search(ExpandString(template, loc))
+            if not m: continue
+            culprits = [v for v in self.question.variables
+                        if m.group(0) in str(self.locals[v])]
+            print("ERROR: floating point noise would be printed in the",
+                  part, "of", where)
+            print("    the", part, "contains the number", m.group(0))
+            for v in culprits:
+                print("    it comes from variable", v, "=",
+                      str(self.locals[v]))
+                print("    Fix the YAML file: add \"Significant: N\" to"
+                      " variable", v, "so the drawn value is rounded")
+                print("    to N figures, or print it with a fixed number"
+                      " of digits, e.g. @[3t]{&{" + v + "}} instead of &{"
+                      + v + "}")
+            if not culprits:
+                print("    Fix the YAML file: print that expression with"
+                      " a fixed number of digits, e.g. @[3t]{...}")
+            sys.exit(1)
+
+    ## Check that the digits printed in the question text are enough
+    #  for a student to reach the correct answer.
+    #
+    # Nothing is corrected or redrawn automatically.  Three problems
+    # are detected:
+    #
+    # 1. A variable is printed with fewer digits than it has, for
+    #    example "@[2t]{&{V}}" with V = 2.45 prints 2.5.  The key is
+    #    computed with 2.45 but a student can only use 2.5.  This
+    #    stops the run with a message saying what to change in the
+    #    YAML file.
+    #
+    # 2. The exact correct answer is a rounding midpoint such as 8.45
+    #    printed with two figures, so a student rounding by hand may
+    #    pick the other neighbour.  This prints a WARNING and the run
+    #    continues; the number of warnings is reported at the end.
+    #
+    # 3. The correct answer computed from the printed values differs
+    #    from the key for another reason, typically floating point
+    #    noise in a variable (3.7800000000000002).  This stops the run.
+    def CheckSignificantDigits(self):
+        where = (self.QuestionName() + " (exam copy "
+                 + str(self.examInstance.copy) + ", "
+                 + self.examInstance.name + ", question "
+                 + str(self.number) + ")")
+        self.CheckPrintedNoise(where)
+        text = str(self.question.text)
+        printed = dict()
+        for v in self.question.variables:
+            value = str(self.locals[v])
+            forms = re.findall(r"@\[([0-9tTgG]*)\]\{&\{" + re.escape(v)
+                               + r"\}\}", text)
+            for spec in forms:
+                shown = SignificantFigures(float(value), spec)
+                m = re.search(r"\\ensuremath\{(-?[0-9.]+)\\times\{\}"
+                              r"10\^\{(-?[0-9]*)\}\}", shown)
+                if m: shown = m.group(1) + "e" + (m.group(2) or "0")
+                if float(shown) == float(value): continue
+                printed[v] = shown
+                if abs(float(shown) - float(value)) \
+                   > 1e-9 * max(1.0, abs(float(value))):
+                    print("ERROR: not enough significant digits in", where)
+                    print("    variable", v, "=", value,
+                          "is printed in the question text as", shown)
+                    print("    Fix the YAML file: print", v,
+                          "with more digits (e.g. @[3t]{&{" + v + "}})"
+                          " or use a Minimum/Maximum/Step")
+                    print("    with no more digits than are printed.")
+                    sys.exit(1)
+        for a in self.answerList:
+            if a.locals["ITEM"] not in self.correctAnswer.upper(): continue
+            roundingMidpoints.clear()
+            keyText = " ".join(ExpandString(str(a.locals["TEXT"]),
+                                            a.locals).split())
+            if roundingMidpoints:
+                global midpointWarnings
+                midpointWarnings += 1
+                exact, shown = roundingMidpoints[0]
+                print("WARNING: the correct answer is a rounding midpoint in",
+                      where + ", answer", a.AnswerName(),
+                      "[" + a.locals["ITEM"] + "]")
+                print("    the key reads:", keyText)
+                print("    the exact result", repr(exact), "is printed as",
+                      shown + "; a student rounding by hand may get the"
+                      " other neighbour")
+                print("    variables:",
+                      ", ".join(k + "=" + str(self.locals[k])
+                                for k in self.question.variables))
+                print("    To avoid this, change the variable's"
+                      " Minimum/Maximum/Step in the YAML file so this")
+                print("    value cannot occur, or print the answer with"
+                      " more digits.")
+                # The comparison below would report the same situation.
+                continue
+            if not printed: continue
+            studentLocals = dict(a.locals)
+            studentLocals.update(printed)
+            studentText = " ".join(ExpandString(str(a.locals["TEXT"]),
+                                                studentLocals).split())
+            if keyText == studentText: continue
+            print("ERROR: the key does not match what a student computes"
+                  " from the printed values")
+            print("    in", where + ", answer", a.AnswerName(),
+                  "[" + a.locals["ITEM"] + "]")
+            print("    the key reads:                           ", keyText)
+            print("    from the printed values a student gets:  ",
+                  studentText)
+            print("    variables:",
+                  ", ".join(k + "=" + str(self.locals[k])
+                            + (" (printed " + printed[k] + ")"
+                               if k in printed else "")
+                            for k in self.question.variables))
+            print("    The variable value carries floating point noise"
+                  " that moves the key across a rounding")
+            print("    boundary.  Fix the YAML file: add \"Significant: N\""
+                  " to the variable so the drawn value is")
+            print("    rounded to N figures, or change its"
+                  " Minimum/Maximum/Step.")
+            sys.exit(1)
 
     ## Build a single question for the test.
     #
@@ -1317,6 +1530,7 @@ exams = []
 if not options.pickle:
     # Read the exam description from a YAML file and generate the exams
     exam = Exam(options.file[0])
+    if not options.dryRun: OpenLog(exam.baseName)
 
     for version in exam.versions.inputs:
         copy += 1
@@ -1327,6 +1541,7 @@ if not options.pickle:
 else:
     # Read an existing exam from a PICKLE file
     with open(options.file[0], "rb") as file: exams = pickle.load(file)
+    if not options.dryRun: OpenLog(exams[0].exam.baseName)
 
 if len(exams) < 1:
     print("No exams generated")
@@ -1346,9 +1561,13 @@ for inst in exams:
         with open(filename,"w") as texFile:
             texFile.write(inst.MakeExam())
 
+if midpointWarnings > 0:
+    print("WARNING:", midpointWarnings, "correct answer(s) were rounding"
+          " midpoints; search the log for WARNING")
+
 # Print the answer key
 if not options.dryRun:
-    filename = exams[0].exam.baseName+".key"
+    filename = exams[0].exam.baseName+"-keys.csv"
     print("Write answer key to", filename)
     with open(filename,"w") as file: file.write(key)
 
