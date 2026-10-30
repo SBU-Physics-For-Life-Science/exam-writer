@@ -33,6 +33,9 @@ the same questions, the same question/answer order, and the same random
 numbers as that earlier run — useful for regenerating an exam after a
 wording or template fix without shuffling everything again.
 
+Use `-O` to build a single copy while writing an exam, and `-s SEED` to
+reproduce an earlier run exactly.
+
 ## The input YAML file
 
 The input file is a YAML **list**.  Each item of the list starts with
@@ -260,6 +263,3 @@ names and the variable values, so the YAML can be corrected:
   so a student rounding by hand may pick the neighbouring option.  The
   number of such copies is printed at the end of the run; avoid them by
   changing the variable ranges or steps.
-
-Use `-O` to build a single copy while writing an exam, and `-s SEED` to
-reproduce an earlier run exactly.
