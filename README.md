@@ -240,7 +240,7 @@ For `BaseName: phy121-midterm2`, a run writes to the current directory:
 |---|---|
 | `phy121-midterm2-0001.tex`, `-0002.tex`, ... | One LaTeX file per copy. `pdflatex file.tex` gives the student copy; `pdflatex "\def\printSolutions{}\input{file.tex}"` gives the key copy with the correct answers marked and the solutions. `build-exam.sh phy121-midterm2` does both for every copy. |
 | `phy121-midterm2-keys.csv` | The answer key: one line per copy with the correct letter of every question, the question names in the order printed, and the student fields. This is the key file read by `exam-grader.py` in the [grading-tools](https://github.com/SBU-Physics-For-Life-Science/grading-tools) repository. |
-| `phy121-midterm2.log` | Everything the run printed, including the random seed and any warning or error. |
+| `phy121-midterm2.txt` | Everything the run printed, including the random seed and any warning or error. |
 | `phy121-midterm2.pickle` | The generated exams, so they can be reprinted with `-P` after a template change without redrawing anything. |
 
 ### Checks made while generating

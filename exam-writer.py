@@ -44,7 +44,7 @@ parser.add_argument('-s','--seed', dest='seed', default=None, type=int,
 options = parser.parse_args()
 
 ## Copy everything printed to a log file named after the exam (e.g.
-## phy121-2026-midterm2.log).  The base name is only known after the
+## phy121-2026-midterm2.txt).  The base name is only known after the
 ## YAML file is read, so the output is buffered until then.
 class LogTee(object):
     def __init__(self, stream):
@@ -73,7 +73,7 @@ sys.stdout = logTee
 sys.stderr = logTee
 
 def OpenLog(baseName):
-    filename = baseName + ".log"
+    filename = baseName + ".txt"
     logTee.open(filename)
     print("Write log to", filename)
 
